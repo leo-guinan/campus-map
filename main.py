@@ -37,8 +37,15 @@ webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
 class DonationProcessor:
     def __init__(self):
         # Create a persistent client with a local directory
-        self.client = chromadb.PersistentClient(path="./chroma_db")
-        
+        self.client = chromadb.HttpClient(
+            ssl=True,
+            host='api.trychroma.com',
+            tenant='44bcbb14-87f0-4601-9e2f-3bf64104d7c4',
+            database='buildinpublicuniversitycampusmap',
+            headers={
+                'x-chroma-token': os.getenv("CHROMA_API_KEY")
+            }
+        ) 
         self.buildings = self.client.get_or_create_collection("buildings")
         
         self.last_cluster_update = datetime.now()
