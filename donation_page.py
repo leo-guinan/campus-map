@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-
+STREAMLIT_URL = os.getenv("STREAMLIT_URL")
+API_URL = os.getenv("API_URL")
 # Configure Stripe
 PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 if not PUBLISHABLE_KEY:
@@ -24,13 +25,13 @@ def create_checkout_session(amount: float, email: str, donor_info: Dict) -> Dict
     """Create Stripe checkout session via API."""
     try:
         response = requests.post(
-            "http://localhost:8008/create-checkout-session",
+            f"{API_URL}/create-checkout-session",
             json={
                 "amount": amount,
                 "currency": "usd",
                 "donor_email": email,
-                "success_url": "http://localhost:8501/success",
-                "cancel_url": "http://localhost:8501/donation_page",
+                "success_url": f"{STREAMLIT_URL}/success",
+                "cancel_url": f"{STREAMLIT_URL}/donation_page",
                 "donor_info": donor_info
             },
             timeout=5
