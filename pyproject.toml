@@ -6,7 +6,7 @@ authors = ["Your Name <your.email@example.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-chromadb = "*"
+chromadb = "^0.4.24"
 numpy = "*"
 faker = "*"
 pytest = "*"

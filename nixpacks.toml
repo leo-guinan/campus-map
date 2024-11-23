@@ -1,5 +1,12 @@
 [phases.setup]
-nixPkgs = ["python312", "poetry"]
+nixPkgs = ["python312", "poetry", "gcc"]
 
 [phases.install]
-cmds = ["poetry install --with production"] 
+cmds = [
+    "python -m pip install --upgrade pip",
+    "poetry config virtualenvs.create false",
+    "poetry install --no-dev --with production"
+]
+
+[start]
+cmd = "python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
