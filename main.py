@@ -18,10 +18,36 @@ import json
 import logging
 import sys
 from fastapi.logger import logger
+from contextlib import asynccontextmanager
 
 load_dotenv()  # Load environment variables from .env file
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle startup/shutdown events."""
+    try:
+        logger.info("Starting application...")
+        # Test ChromaDB connection
+        logger.info("Testing ChromaDB connection...")
+        try:
+            donation_processor.client.heartbeat()
+            logger.info("ChromaDB connection successful")
+        except Exception as e:
+            logger.error(f"ChromaDB connection failed: {str(e)}")
+            raise
+        
+        # Test Stripe configuration
+        logger.info("Testing Stripe configuration...")
+        if not stripe.api_key:
+            raise ValueError("Stripe API key not configured")
+        logger.info("Stripe configuration verified")
+        
+        logger.info("Application startup complete")
+        yield
+    finally:
+        logger.info("Application shutting down...")
+
+app = FastAPI(lifespan=lifespan)
 fake = Faker()
 
 # Configure logging
@@ -250,43 +276,6 @@ class DonationRequest(BaseModel):
 donation_processor = DonationProcessor()
 cluster_manager = ClusterManager(donation_processor)
 donation_processor.cluster_manager = cluster_manager
-
-@app.on_event("startup")
-async def startup_event():
-    """Log configuration and test connections on startup."""
-    try:
-        logger.info("Starting application...")
-        
-        # Log environment variables (excluding sensitive ones)
-        logger.info(f"API_PORT: {os.getenv('API_PORT')}")
-        logger.info(f"STREAMLIT_URL configured: {'STREAMLIT_URL' in os.environ}")
-        logger.info(f"API_URL configured: {'API_URL' in os.environ}")
-        
-        # Test ChromaDB connection
-        logger.info("Testing ChromaDB connection...")
-        try:
-            donation_processor.client.heartbeat()
-            logger.info("ChromaDB connection successful")
-        except Exception as e:
-            logger.error(f"ChromaDB connection failed: {str(e)}")
-            raise
-        
-        # Test Stripe configuration
-        logger.info("Testing Stripe configuration...")
-        if not stripe.api_key:
-            raise ValueError("Stripe API key not configured")
-        logger.info("Stripe configuration verified")
-        
-        logger.info("Application startup complete")
-        
-    except Exception as e:
-        logger.error(f"Startup failed: {str(e)}")
-        raise
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info("Application shutting down...")
 
 @app.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
