@@ -6,10 +6,3 @@ cmds = [
     "poetry config virtualenvs.create false",
     "poetry install --no-dev --with production"
 ]
-
-[start]
-cmd = "python main.py"
-stopSignal = "SIGINT"
-
-[start.env]
-PORT = "8008"
