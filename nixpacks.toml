@@ -1,11 +1,13 @@
 [phases.setup]
 nixPkgs = ["python312", "poetry", "gcc", "python312Packages.pip"]
+aptPkgs = ["python3-dev"]
 
 [phases.install]
 cmds = [
     "poetry config virtualenvs.create false",
-    "poetry install --no-dev --with production"
+    "poetry install --no-dev --with production",
+    "chmod +x start.sh"
 ]
 
 [start]
-cmd = "python main.py"
+cmd = "./start.sh"
