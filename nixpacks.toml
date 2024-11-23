@@ -8,4 +8,8 @@ cmds = [
 ]
 
 [start]
-cmd = "python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
+cmd = "python main.py"
+stopSignal = "SIGINT"
+
+[start.env]
+PORT = "8008"

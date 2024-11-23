@@ -15,11 +15,21 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 import json
+import logging
+import sys
+from fastapi.logger import logger
 
 load_dotenv()  # Load environment variables from .env file
 
 app = FastAPI()
 fake = Faker()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout  # Ensure logs go to stdout for CloudWatch
+)
 
 # Add CORS middleware
 app.add_middleware(
@@ -241,6 +251,43 @@ donation_processor = DonationProcessor()
 cluster_manager = ClusterManager(donation_processor)
 donation_processor.cluster_manager = cluster_manager
 
+@app.on_event("startup")
+async def startup_event():
+    """Log configuration and test connections on startup."""
+    try:
+        logger.info("Starting application...")
+        
+        # Log environment variables (excluding sensitive ones)
+        logger.info(f"API_PORT: {os.getenv('API_PORT')}")
+        logger.info(f"STREAMLIT_URL configured: {'STREAMLIT_URL' in os.environ}")
+        logger.info(f"API_URL configured: {'API_URL' in os.environ}")
+        
+        # Test ChromaDB connection
+        logger.info("Testing ChromaDB connection...")
+        try:
+            donation_processor.client.heartbeat()
+            logger.info("ChromaDB connection successful")
+        except Exception as e:
+            logger.error(f"ChromaDB connection failed: {str(e)}")
+            raise
+        
+        # Test Stripe configuration
+        logger.info("Testing Stripe configuration...")
+        if not stripe.api_key:
+            raise ValueError("Stripe API key not configured")
+        logger.info("Stripe configuration verified")
+        
+        logger.info("Application startup complete")
+        
+    except Exception as e:
+        logger.error(f"Startup failed: {str(e)}")
+        raise
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown."""
+    logger.info("Application shutting down...")
+
 @app.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events."""
@@ -313,10 +360,30 @@ async def force_update_regions(background_tasks: BackgroundTasks):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "ok"}
+    """Enhanced health check endpoint."""
+    health_status = {
+        "status": "ok",
+        "checks": {
+            "chromadb": "ok",
+            "stripe": "ok"
+        }
+    }
+    
+    try:
+        donation_processor.client.heartbeat()
+    except Exception as e:
+        health_status["checks"]["chromadb"] = f"error: {str(e)}"
+        health_status["status"] = "error"
+    
+    if not stripe.api_key:
+        health_status["checks"]["stripe"] = "error: API key not configured"
+        health_status["status"] = "error"
+    
+    return health_status
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=os.getenv("API_PORT"))
+    port = int(os.getenv("API_PORT", 8008))
+    logger.info(f"Starting server on port {port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
