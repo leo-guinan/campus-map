@@ -44,7 +44,7 @@ def create_checkout_session(amount: float, email: str, donor_info: Dict) -> Dict
         return response.json()
         
     except requests.exceptions.ConnectionError:
-        st.error("Could not connect to the server. Is the FastAPI server running on port 8008?")
+        st.error("Could not connect to the server. Is the FastAPI server running?")
         return None
     except requests.exceptions.RequestException as e:
         st.error(f"API Error: {str(e)}")
@@ -150,8 +150,17 @@ def main():
                     }
                     session = create_checkout_session(amount, email, donor_info)
                     if session and 'url' in session:
-                        st.markdown(f'<meta http-equiv="refresh" content="0;url={session["url"]}">', unsafe_allow_html=True)
-                        st.markdown(f"[Click here if not redirected automatically]({session['url']})")
+                        # Use Streamlit's native redirect
+                        st.link_button("Proceed to Payment", session['url'])
+                        # Or use JavaScript redirect as fallback
+                        st.markdown(
+                            f"""
+                            <script>
+                                window.top.location.href = '{session['url']}';
+                            </script>
+                            """,
+                            unsafe_allow_html=True
+                        )
     
     with col2:
         st.markdown("""
