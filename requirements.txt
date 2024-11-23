@@ -1,0 +1,13 @@
+chromadb
+numpy
+faker
+pytest
+fastapi
+stripe
+python-dotenv
+uvicorn
+scikit-learn
+streamlit
+plotly
+requests
+pysqlite3-binary

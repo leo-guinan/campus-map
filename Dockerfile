@@ -20,6 +20,8 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry config virtualenvs.create false \
     && poetry install --no-dev --no-interaction --no-ansi
 
+RUN poetry add pysqlite3-binary
+
 # Copy application code
 COPY . .
 

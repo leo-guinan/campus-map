@@ -19,8 +19,6 @@ streamlit = "*"
 plotly = "*"
 requests = "*"
 
-[tool.poetry.group.production.dependencies]
-pysqlite3-binary = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
