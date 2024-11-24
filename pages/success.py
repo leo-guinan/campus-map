@@ -1,11 +1,13 @@
 import streamlit as st
-from main import donation_processor, cluster_manager
+from services.api_client import APIClient
 
 st.set_page_config(
     page_title="Donation Successful!",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+api_client = APIClient()
 
 def main():
     st.title("🎉 Thank You for Your Donation!")
@@ -36,10 +38,10 @@ def main():
     # Show recent campus stats
     st.markdown("### Campus Statistics")
     try:
-        buildings = donation_processor.buildings.get()
-        regions = cluster_manager.get_region_data()
+        buildings = api_client.get_buildings()
+        regions = api_client.get_regions()
         
-        total_donations = sum(b["donation_amount"] for b in buildings["metadatas"])
+        total_donations = sum(b["donation_amount"] for b in buildings["metadata"])
         
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -47,10 +49,11 @@ def main():
         with col2:
             st.metric("Total Buildings", len(buildings["ids"]))
         with col3:
-            st.metric("Active Districts", len(regions))
+            st.metric("Active Districts", len(regions) if regions else 0)
             
     except Exception as e:
         st.warning("Campus statistics temporarily unavailable. Please check back later.")
+        st.error(f"Error: {str(e)}")
 
 if __name__ == "__main__":
     main() 

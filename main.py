@@ -370,6 +370,18 @@ async def health_check():
     
     return health_status
 
+@app.get("/buildings")
+async def get_buildings():
+    """Get all buildings data."""
+    try:
+        buildings = donation_processor.buildings.get()
+        return {
+            "ids": buildings["ids"],
+            "metadata": buildings["metadatas"]
+        }
+    except Exception as e:
+        logger.error(f"Error getting buildings: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
