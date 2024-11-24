@@ -22,6 +22,9 @@ psycopg2-binary = "*"
 sqlalchemy = "*"
 alembic = "*"
 
+[tool.poetry.scripts]
+start = "uvicorn main:app --host 0.0.0.0 --port 8000"
+migrate = "alembic upgrade head"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
