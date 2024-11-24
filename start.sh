@@ -31,6 +31,11 @@ echo "All required environment variables are set"
 # Create necessary directories
 mkdir -p /app/logs
 
+# Add this before running migrations
+if [[ $DATABASE_URL == postgres://* ]]; then
+    export DATABASE_URL="${DATABASE_URL/postgres:\/\//postgresql:\/\/}"
+fi
+
 echo "Running database migrations..."
 python -m alembic upgrade head
 
