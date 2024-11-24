@@ -18,6 +18,9 @@ scikit-learn = "*"
 streamlit = "*"
 plotly = "*"
 requests = "*"
+psycopg2-binary = "*"
+sqlalchemy = "*"
+alembic = "*"
 
 
 [build-system]

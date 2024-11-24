@@ -19,6 +19,9 @@ import logging
 import sys
 from fastapi.logger import logger
 from contextlib import asynccontextmanager
+from models.database import get_db, BuildingDetails
+from sqlalchemy.orm import Session
+from fastapi import Depends
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -86,41 +89,68 @@ class DonationProcessor:
         
         self.last_cluster_update = datetime.now()
         self.cluster_manager = None  # Will be set after initialization
+        self.MAX_METADATA_VALUE_SIZE = 32  # ChromaDB's limit in bytes
         
-    def process_donation(self, amount: float, donor_id: str, metadata: Dict = None) -> Dict:
+    def _truncate_metadata_value(self, value: str, max_bytes: int = 32) -> str:
+        """Truncate a string to fit within byte limit."""
+        if not value:
+            return ""
+        encoded = value.encode('utf-8')
+        if len(encoded) <= max_bytes:
+            return value
+        # Truncate and add ellipsis while staying under byte limit
+        return value.encode('utf-8')[:max_bytes-3].decode('utf-8', errors='ignore') + '...'
+    
+    def process_donation(self, amount: float, donor_id: str, metadata: Dict = None, db: Session = None) -> Dict:
         """Process a new donation and create a building."""
         building_name = self.generate_building_name()
         coordinates = self.generate_coordinates()
+        building_id = f"building_{donor_id}_{int(datetime.now().timestamp())}"
         
         metadata = metadata or {}
+        
+        # Prepare building metadata with truncated values for ChromaDB
         building_metadata = {
-            "name": building_name,
+            "name": self._truncate_metadata_value(building_name),
             "donation_amount": amount,
-            "donor_id": donor_id,
-            "creation_date": datetime.now().isoformat(),
+            "donor_id": self._truncate_metadata_value(donor_id),
+            "creation_date": datetime.now().isoformat()[:19],
             "coordinates": json.dumps(coordinates),
-            "region_id": "",  # Will be assigned during clustering
-            "donor_name": metadata.get("donor_name", "Anonymous"),
-            "building_type": metadata.get("building_type", "Building"),
-            "research_question": metadata.get("research_question", ""),
-            "website": metadata.get("website", "")
+            "region_id": "",
+            "donor_name": self._truncate_metadata_value(metadata.get("donor_name", "Anonymous")),
+            "building_type": self._truncate_metadata_value(metadata.get("building_type", "Building")),
+            "research_question": self._truncate_metadata_value(metadata.get("research_question", "")),
+            "website": self._truncate_metadata_value(metadata.get("website", ""))
         }
         
-        # Generate a simple embedding based on coordinates for now
-        embedding = coordinates
-        
+        # Store in ChromaDB
         self.buildings.add(
-            embeddings=[embedding],
+            embeddings=[coordinates],
             metadatas=[building_metadata],
-            ids=[f"building_{donor_id}_{int(datetime.now().timestamp())}"]
+            ids=[building_id]
         )
         
-        # Check if clustering update is needed
-        if (datetime.now() - self.last_cluster_update).seconds > 300:  # 5 minutes
-            asyncio.create_task(self.cluster_manager.update_clusters())
-            self.last_cluster_update = datetime.now()
+        # Store full text in SQLite
+        if db:
+            building_details = BuildingDetails(
+                building_id=building_id,
+                full_research_question=metadata.get("research_question", ""),
+                full_building_type=metadata.get("building_type", "Building"),
+                full_donor_name=metadata.get("donor_name", "Anonymous"),
+                website=metadata.get("website", ""),
+                donation_amount=amount,
+                creation_date=datetime.now()
+            )
+            db.add(building_details)
+            db.commit()
         
-        return building_metadata
+        # Return combined data
+        return {
+            **building_metadata,
+            "full_research_question": metadata.get("research_question", ""),
+            "full_building_type": metadata.get("building_type", "Building"),
+            "full_donor_name": metadata.get("donor_name", "Anonymous")
+        }
     
     def generate_building_name(self) -> str:
         """Generate a unique building name."""
@@ -130,7 +160,7 @@ class DonationProcessor:
         """Generate random 2D coordinates for initial placement."""
         return [np.random.uniform(-1, 1), np.random.uniform(-1, 1)]
     
-    async def process_stripe_event(self, event: stripe.Event) -> Dict:
+    async def process_stripe_event(self, event: stripe.Event, db: Session) -> Dict:
         """Process a Stripe webhook event."""
         print(f"Processing event type: {event.type}")  # Debug logging
         
@@ -150,7 +180,7 @@ class DonationProcessor:
                 "website": session.metadata.get("website", "")
             }
             
-            return self.process_donation(amount, donor_id, metadata)
+            return self.process_donation(amount, donor_id, metadata, db)
         elif event.type == "payment_intent.succeeded":
             payment_intent = event.data.object
             print(f"Processing succeeded payment: {payment_intent.id}")  # Debug logging
@@ -158,7 +188,7 @@ class DonationProcessor:
             amount = payment_intent.amount / 100
             donor_id = payment_intent.customer or "anonymous"
             
-            return self.process_donation(amount, donor_id)
+            return self.process_donation(amount, donor_id, db=db)
             
         return {"status": "ignored", "event_type": event.type}
 
@@ -278,7 +308,7 @@ cluster_manager = ClusterManager(donation_processor)
 donation_processor.cluster_manager = cluster_manager
 
 @app.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     """Handle Stripe webhook events."""
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
@@ -296,7 +326,7 @@ async def stripe_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
         
     try:
-        result = await donation_processor.process_stripe_event(event)
+        result = await donation_processor.process_stripe_event(event, db)
         print(f"Processed webhook result: {result}")  # Debug logging
         return result
     except Exception as e:
@@ -382,6 +412,14 @@ async def get_buildings():
     except Exception as e:
         logger.error(f"Error getting buildings: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/buildings/{building_id}/details")
+async def get_building_details(building_id: str, db: Session = Depends(get_db)):
+    """Get full building details including non-truncated text."""
+    details = db.query(BuildingDetails).filter(BuildingDetails.building_id == building_id).first()
+    if not details:
+        raise HTTPException(status_code=404, detail="Building not found")
+    return details
 
 if __name__ == "__main__":
     import uvicorn

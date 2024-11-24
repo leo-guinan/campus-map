@@ -31,6 +31,9 @@ echo "All required environment variables are set"
 # Create necessary directories
 mkdir -p /app/logs
 
+echo "Running database migrations..."
+alembic upgrade head
+
 # Start the server with detailed logging
 echo "Starting server..."
 exec python -m uvicorn main:app \
