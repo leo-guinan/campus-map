@@ -10,6 +10,10 @@ from models.database import Base
 # Load our models
 from models.database import BuildingDetails
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
 # this is the Alembic Config object
 config = context.config
 
