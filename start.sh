@@ -32,7 +32,7 @@ echo "All required environment variables are set"
 mkdir -p /app/logs
 
 echo "Running database migrations..."
-# alembic upgrade head
+python -m alembic upgrade head
 
 # Start the server with detailed logging
 echo "Starting server..."
