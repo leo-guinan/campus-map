@@ -5,7 +5,7 @@ import json
 
 def generate_2d_coordinates(embeddings: List[Any]) -> List[List[float]]:
     """Generate 2D coordinates from embeddings using PCA."""
-    if not embeddings:
+    if not embeddings.all():
         return []
         
     # Convert embeddings to numpy array
