@@ -125,7 +125,7 @@ class DonationProcessor:
         
         # Store in ChromaDB
         self.buildings.add(
-            embeddings=[coordinates],
+            texts=[f"Building: {building_name}\nDonor: {donor_id}\nAmount: ${amount:.2f}\nResearch Question: {metadata.get('research_question', '')}\nBuilding Type: {metadata.get('building_type', 'Building')}\nDonor Name: {metadata.get('donor_name', 'Anonymous')}\nWebsite: {metadata.get('website', '')}"],
             metadatas=[building_metadata],
             ids=[building_id]
         )
@@ -156,10 +156,7 @@ class DonationProcessor:
         """Generate a unique building name."""
         return f"{fake.last_name()} {fake.random_element(['Hall', 'Center', 'Building', 'Laboratory'])}"
     
-    def generate_coordinates(self) -> List[float]:
-        """Generate random 2D coordinates for initial placement."""
-        return [np.random.uniform(-1, 1), np.random.uniform(-1, 1)]
-    
+
     async def process_stripe_event(self, event: stripe.Event, db: Session) -> Dict:
         """Process a Stripe webhook event."""
         print(f"Processing event type: {event.type}")  # Debug logging
