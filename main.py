@@ -23,6 +23,7 @@ from models.database import get_db, BuildingDetails
 from sqlalchemy.orm import Session
 from fastapi import Depends
 from sklearn.decomposition import PCA
+from utils.coordinates import generate_2d_coordinates, update_metadata_with_coordinates
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -229,21 +230,24 @@ class ClusterManager:
     async def update_clusters(self):
         """Update region assignments for all buildings."""
         # Get all buildings
-        buildings = self.dp.buildings.get()
+        buildings = self.dp.buildings.get(include=["embeddings"])
         if not buildings["ids"]:
             return
         
-        # Extract coordinates for clustering
-        coordinates = np.array([
-            json.loads(meta["coordinates"]) for meta in buildings["metadatas"]
-        ])
+        # Generate coordinates
+        coordinates = generate_2d_coordinates(buildings["embeddings"])
+        if not coordinates:
+            return
+        
+        # Convert to numpy array for clustering
+        coordinates_array = np.array(coordinates)
         
         # Determine number of clusters based on number of buildings
-        n_clusters = min(self.max_clusters, len(coordinates))
+        n_clusters = min(self.max_clusters, len(coordinates_array))
         
         # Perform clustering
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        cluster_labels = kmeans.fit_predict(coordinates)
+        cluster_labels = kmeans.fit_predict(coordinates_array)
         
         # Generate colors for regions
         colors = self.generate_colors(n_clusters)
@@ -257,21 +261,26 @@ class ClusterManager:
                 center=kmeans.cluster_centers_[i].tolist()
             )
         
-        # Assign buildings to regions
-        for building_id, meta, label in zip(
+        # Assign buildings to regions and update metadata
+        for building_id, meta, label, coords in zip(
             buildings["ids"],
             buildings["metadatas"],
-            cluster_labels
+            cluster_labels,
+            coordinates
         ):
             region_id = str(label)
             region = self.regions[region_id]
             region.buildings.append(building_id)
             region.total_donations += meta["donation_amount"]
             
-            # Update building metadata with region
+            # Update building metadata with region and coordinates
             self.dp.buildings.update(
                 ids=[building_id],
-                metadatas=[{**meta, "region_id": region_id}]
+                metadatas=[{
+                    **meta, 
+                    "region_id": region_id,
+                    "coordinates": json.dumps(coords)
+                }]
             )
         
         return self.get_region_data()
@@ -400,31 +409,8 @@ async def health_check():
 async def get_buildings():
     """Get all buildings data."""
     try:
-        buildings = donation_processor.buildings.get()
-        if not buildings["ids"]:
-            return {"ids": [], "metadata": []}
-        
-        # Extract embeddings
-        embeddings = buildings["embeddings"]
-        if embeddings and len(embeddings) > 0:
-            embeddings_array = np.array(embeddings)
-            if len(embeddings_array.shape) == 1:
-                embeddings_array = embeddings_array.reshape(1, -1)
-            elif len(embeddings_array.shape) == 3:
-                embeddings_array = embeddings_array.reshape(embeddings_array.shape[0], -1)
-
-            # Perform PCA
-            pca = PCA(n_components=2)
-            embeddings_2d = pca.fit_transform(embeddings_array)
-
-            # Convert coordinates to JSON string
-            for i, coords in enumerate(embeddings_2d):
-                buildings["metadatas"][i]["coordinates"] = json.dumps(coords.tolist())
-                
-        return {
-            "ids": buildings["ids"],
-            "metadata": buildings["metadatas"]
-        }
+        buildings = donation_processor.buildings.get(include=["embeddings"])
+        return update_metadata_with_coordinates(buildings)
     except Exception as e:
         logger.error(f"Error getting buildings: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
