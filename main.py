@@ -123,7 +123,7 @@ class DonationProcessor:
         
         # Store in ChromaDB
         self.buildings.add(
-            texts=[f"Building: {building_name}\nDonor: {donor_id}\nAmount: ${amount:.2f}\nResearch Question: {metadata.get('research_question', '')}\nBuilding Type: {metadata.get('building_type', 'Building')}\nDonor Name: {metadata.get('donor_name', 'Anonymous')}\nWebsite: {metadata.get('website', '')}"],
+            documents=[f"Building: {building_name}\nDonor: {donor_id}\nAmount: ${amount:.2f}\nResearch Question: {metadata.get('research_question', '')}\nBuilding Type: {metadata.get('building_type', 'Building')}\nDonor Name: {metadata.get('donor_name', 'Anonymous')}\nWebsite: {metadata.get('website', '')}"],
             metadatas=[building_metadata],
             ids=[building_id]
         )
