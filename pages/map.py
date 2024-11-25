@@ -52,7 +52,7 @@ def create_campus_map():
         # Add buildings as scatter points
         if buildings["metadata"]:
             for meta in buildings["metadata"]:
-                coords = json.loads(meta["coordinates"])
+                coords = meta["coordinates"]
                 region_id = meta.get("region_id", "")
                 region_color = regions.get(region_id, {}).get("color", "#888888") if region_id else "#888888"
                 

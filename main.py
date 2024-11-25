@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from models.database import get_db, BuildingDetails
 from sqlalchemy.orm import Session
 from fastapi import Depends
+from sklearn.decomposition import PCA
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -400,6 +401,26 @@ async def get_buildings():
     """Get all buildings data."""
     try:
         buildings = donation_processor.buildings.get()
+        if not buildings["ids"]:
+            return {"ids": [], "metadata": []}
+        
+        # Extract embeddings
+        embeddings = buildings["embeddings"]
+        if embeddings and len(embeddings) > 0:
+            embeddings_array = np.array(embeddings)
+            if len(embeddings_array.shape) == 1:
+                embeddings_array = embeddings_array.reshape(1, -1)
+            elif len(embeddings_array.shape) == 3:
+                embeddings_array = embeddings_array.reshape(embeddings_array.shape[0], -1)
+
+            # Perform PCA
+            pca = PCA(n_components=2)
+            embeddings_2d = pca.fit_transform(embeddings_array)
+
+            # Convert coordinates to JSON string
+            for i, coords in enumerate(embeddings_2d):
+                buildings["metadatas"][i]["coordinates"] = json.dumps(coords.tolist())
+                
         return {
             "ids": buildings["ids"],
             "metadata": buildings["metadatas"]
