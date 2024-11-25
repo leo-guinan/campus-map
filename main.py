@@ -104,7 +104,6 @@ class DonationProcessor:
     def process_donation(self, amount: float, donor_id: str, metadata: Dict = None, db: Session = None) -> Dict:
         """Process a new donation and create a building."""
         building_name = self.generate_building_name()
-        coordinates = self.generate_coordinates()
         building_id = f"building_{donor_id}_{int(datetime.now().timestamp())}"
         
         metadata = metadata or {}
@@ -115,7 +114,6 @@ class DonationProcessor:
             "donation_amount": amount,
             "donor_id": self._truncate_metadata_value(donor_id),
             "creation_date": datetime.now().isoformat()[:19],
-            "coordinates": json.dumps(coordinates),
             "region_id": "",
             "donor_name": self._truncate_metadata_value(metadata.get("donor_name", "Anonymous")),
             "building_type": self._truncate_metadata_value(metadata.get("building_type", "Building")),
