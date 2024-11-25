@@ -410,10 +410,15 @@ async def get_buildings():
     """Get all buildings data."""
     try:
         buildings = donation_processor.buildings.get(include=["embeddings"])
+        if buildings is None:
+            logger.error("ChromaDB returned None for buildings query")
+            return {"ids": [], "metadata": []}
+            
         return update_metadata_with_coordinates(buildings)
     except Exception as e:
         logger.error(f"Error getting buildings: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return empty result instead of error for better UX
+        return {"ids": [], "metadata": []}
 
 @app.get("/buildings/{building_id}/details")
 async def get_building_details(building_id: str, db: Session = Depends(get_db)):

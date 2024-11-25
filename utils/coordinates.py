@@ -2,10 +2,13 @@ import numpy as np
 from sklearn.decomposition import PCA
 from typing import List, Dict, Any
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 def generate_2d_coordinates(embeddings: List[Any]) -> List[List[float]]:
     """Generate 2D coordinates from embeddings using PCA."""
-    if not embeddings.all():
+    if embeddings is None or not isinstance(embeddings, (list, np.ndarray)) or len(embeddings) == 0:
         return []
         
     # Convert embeddings to numpy array
@@ -25,15 +28,26 @@ def generate_2d_coordinates(embeddings: List[Any]) -> List[List[float]]:
 
 def update_metadata_with_coordinates(buildings_data: Dict) -> Dict:
     """Update building metadata with 2D coordinates."""
-    if not buildings_data["ids"]:
+    if not buildings_data or not isinstance(buildings_data, dict):
         return {"ids": [], "metadata": []}
+        
+    if "ids" not in buildings_data or not buildings_data["ids"]:
+        return {"ids": [], "metadata": []}
+    
+    if "embeddings" not in buildings_data:
+        logger.warning("No embeddings found in buildings data")
+        return {
+            "ids": buildings_data["ids"],
+            "metadata": buildings_data["metadatas"]
+        }
     
     # Generate 2D coordinates
     coordinates = generate_2d_coordinates(buildings_data["embeddings"])
     
     # Update metadata with coordinates
     for i, coords in enumerate(coordinates):
-        buildings_data["metadatas"][i]["coordinates"] = json.dumps(coords)
+        if i < len(buildings_data["metadatas"]):
+            buildings_data["metadatas"][i]["coordinates"] = json.dumps(coords)
     
     return {
         "ids": buildings_data["ids"],
