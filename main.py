@@ -231,16 +231,20 @@ class ClusterManager:
         """Update region assignments for all buildings."""
         try:
             # Get all buildings
-            buildings = self.dp.buildings.get(include=["embeddings"])
+            buildings = self.dp.buildings.get(include=["embeddings", "metadatas"])
             if not buildings or "ids" not in buildings or not buildings["ids"]:
                 logger.warning("No buildings found for clustering")
                 return
             
+            logger.info(f"Processing {len(buildings['ids'])} buildings for clustering")
+            
             # Generate coordinates
-            coordinates = generate_2d_coordinates(buildings["embeddings"])
+            coordinates = generate_2d_coordinates(buildings.get("embeddings", []))
             if not coordinates:
                 logger.warning("No coordinates generated for clustering")
-                return
+                # Fallback to random coordinates
+                coordinates = generate_random_coordinates(len(buildings["ids"]))
+                logger.info("Using random coordinates as fallback")
             
             # Convert to numpy array for clustering
             coordinates_array = np.array(coordinates)
@@ -253,6 +257,8 @@ class ClusterManager:
             if n_clusters < 1:
                 logger.warning("Not enough buildings for clustering")
                 return
+            
+            logger.info(f"Creating {n_clusters} clusters")
             
             # Perform clustering
             kmeans = KMeans(n_clusters=n_clusters, random_state=42)
@@ -270,6 +276,11 @@ class ClusterManager:
                     center=kmeans.cluster_centers_[i].tolist()
                 )
             
+            # Reset region totals
+            for region in self.regions.values():
+                region.buildings = []
+                region.total_donations = 0.0
+            
             # Verify all required data is present and of same length
             if not (len(buildings["ids"]) == len(buildings["metadatas"]) == 
                     len(cluster_labels) == len(coordinates)):
@@ -284,13 +295,17 @@ class ClusterManager:
                 buildings["metadatas"],
                 cluster_labels,
                 coordinates,
-                strict=True  # Ensure all iterables are the same length
+                strict=True
             ):
                 try:
                     region_id = str(label)
+                    if region_id not in self.regions:
+                        logger.error(f"Invalid region_id {region_id}")
+                        continue
+                    
                     region = self.regions[region_id]
                     region.buildings.append(building_id)
-                    region.total_donations += meta["donation_amount"]
+                    region.total_donations += meta.get("donation_amount", 0)
                     
                     # Update building metadata with region and coordinates
                     self.dp.buildings.update(
@@ -301,10 +316,12 @@ class ClusterManager:
                             "coordinates": json.dumps(coords)
                         }]
                     )
+                    logger.info(f"Assigned building {building_id} to region {region_id}")
                 except Exception as e:
                     logger.error(f"Error updating building {building_id}: {str(e)}")
                     continue
             
+            logger.info("Clustering update complete")
             return self.get_region_data()
             
         except Exception as e:
