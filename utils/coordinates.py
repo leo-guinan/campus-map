@@ -52,7 +52,7 @@ def generate_2d_coordinates(embeddings: List[Any]) -> List[List[float]]:
         logger.error(f"Error generating coordinates: {str(e)}")
         return []
 
-def generate_coordinates(buildings_data: Dict) -> Dict:
+def update_metadata_with_coordinates(buildings_data: Dict) -> Dict:
     """Update building metadata with 2D coordinates."""
     try:
         if not buildings_data:
