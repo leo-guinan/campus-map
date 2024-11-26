@@ -435,11 +435,11 @@ async def health_check():
 async def get_buildings():
     """Get all buildings data."""
     try:
-        buildings = donation_processor.buildings.get(include=["embeddings"])
+        buildings = donation_processor.buildings.get(include=["embeddings", "metadatas"])
         if buildings is None:
             logger.error("ChromaDB returned None for buildings query")
             return {"ids": [], "metadata": []}
-            
+                
         return update_metadata_with_coordinates(buildings)
     except Exception as e:
         logger.error(f"Error getting buildings: {str(e)}")
