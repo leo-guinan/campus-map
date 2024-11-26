@@ -229,61 +229,87 @@ class ClusterManager:
 
     async def update_clusters(self):
         """Update region assignments for all buildings."""
-        # Get all buildings
-        buildings = self.dp.buildings.get(include=["embeddings"])
-        if not buildings["ids"]:
-            return
-        
-        # Generate coordinates
-        coordinates = generate_2d_coordinates(buildings["embeddings"])
-        if not coordinates:
-            return
-        
-        # Convert to numpy array for clustering
-        coordinates_array = np.array(coordinates)
-        
-        # Determine number of clusters based on number of buildings
-        n_clusters = min(self.max_clusters, len(coordinates_array))
-        
-        # Perform clustering
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        cluster_labels = kmeans.fit_predict(coordinates_array)
-        
-        # Generate colors for regions
-        colors = self.generate_colors(n_clusters)
-        
-        # Create regions
-        self.regions = {}
-        for i in range(n_clusters):
-            self.regions[str(i)] = Region(
-                name=self.region_names[i],
-                color=colors[i],
-                center=kmeans.cluster_centers_[i].tolist()
-            )
-        
-        # Assign buildings to regions and update metadata
-        for building_id, meta, label, coords in zip(
-            buildings["ids"],
-            buildings["metadatas"],
-            cluster_labels,
-            coordinates
-        ):
-            region_id = str(label)
-            region = self.regions[region_id]
-            region.buildings.append(building_id)
-            region.total_donations += meta["donation_amount"]
+        try:
+            # Get all buildings
+            buildings = self.dp.buildings.get(include=["embeddings"])
+            if not buildings or "ids" not in buildings or not buildings["ids"]:
+                logger.warning("No buildings found for clustering")
+                return
             
-            # Update building metadata with region and coordinates
-            self.dp.buildings.update(
-                ids=[building_id],
-                metadatas=[{
-                    **meta, 
-                    "region_id": region_id,
-                    "coordinates": json.dumps(coords)
-                }]
-            )
-        
-        return self.get_region_data()
+            # Generate coordinates
+            coordinates = generate_2d_coordinates(buildings["embeddings"])
+            if not coordinates:
+                logger.warning("No coordinates generated for clustering")
+                return
+            
+            # Convert to numpy array for clustering
+            coordinates_array = np.array(coordinates)
+            if coordinates_array.size == 0:
+                logger.warning("Empty coordinates array for clustering")
+                return
+            
+            # Determine number of clusters based on number of buildings
+            n_clusters = min(self.max_clusters, len(coordinates_array))
+            if n_clusters < 1:
+                logger.warning("Not enough buildings for clustering")
+                return
+            
+            # Perform clustering
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+            cluster_labels = kmeans.fit_predict(coordinates_array)
+            
+            # Generate colors for regions
+            colors = self.generate_colors(n_clusters)
+            
+            # Create regions
+            self.regions = {}
+            for i in range(n_clusters):
+                self.regions[str(i)] = Region(
+                    name=self.region_names[i],
+                    color=colors[i],
+                    center=kmeans.cluster_centers_[i].tolist()
+                )
+            
+            # Verify all required data is present and of same length
+            if not (len(buildings["ids"]) == len(buildings["metadatas"]) == 
+                    len(cluster_labels) == len(coordinates)):
+                logger.error("Mismatched data lengths for clustering")
+                logger.error(f"ids: {len(buildings['ids'])}, meta: {len(buildings['metadatas'])}, "
+                            f"labels: {len(cluster_labels)}, coords: {len(coordinates)}")
+                return
+            
+            # Assign buildings to regions and update metadata
+            for building_id, meta, label, coords in zip(
+                buildings["ids"],
+                buildings["metadatas"],
+                cluster_labels,
+                coordinates,
+                strict=True  # Ensure all iterables are the same length
+            ):
+                try:
+                    region_id = str(label)
+                    region = self.regions[region_id]
+                    region.buildings.append(building_id)
+                    region.total_donations += meta["donation_amount"]
+                    
+                    # Update building metadata with region and coordinates
+                    self.dp.buildings.update(
+                        ids=[building_id],
+                        metadatas=[{
+                            **meta, 
+                            "region_id": region_id,
+                            "coordinates": json.dumps(coords)
+                        }]
+                    )
+                except Exception as e:
+                    logger.error(f"Error updating building {building_id}: {str(e)}")
+                    continue
+            
+            return self.get_region_data()
+            
+        except Exception as e:
+            logger.error(f"Error in update_clusters: {str(e)}")
+            return None
     
     def get_region_data(self) -> Dict:
         """Get current region data."""
