@@ -14,6 +14,44 @@ st.set_page_config(
 
 api_client = APIClient()
 
+# Add session state for view management
+if 'view_state' not in st.session_state:
+    st.session_state.view_state = {
+        'zoomed': False,
+        'focused_region': None,
+        'original_ranges': {'x': [-1.2, 1.2], 'y': [-1.2, 1.2]}
+    }
+
+def calculate_region_bounds(region_center, radius=0.3):
+    """Calculate the bounds for a zoomed region view."""
+    padding = radius * 0.2  # Add 20% padding
+    return {
+        'x': [region_center[0] - radius - padding, region_center[0] + radius + padding],
+        'y': [region_center[1] - radius - padding, region_center[1] + radius + padding]
+    }
+
+def handle_click_event():
+    """Handle click events on the plot."""
+    clicked_data = st.session_state.get('plotly_click', None)
+    if clicked_data and clicked_data.get('event', '') == 'plotly_doubleclick':
+        point_data = clicked_data.get('points', [{}])[0]
+        curve_name = point_data.get('data', {}).get('name', '')
+        
+        # Check if we clicked on a region
+        regions = api_client.get_regions()
+        for region_id, region in regions.items():
+            if region['name'] == curve_name:
+                if st.session_state.view_state['zoomed'] and st.session_state.view_state['focused_region'] == region_id:
+                    # Reset view if clicking on same region
+                    st.session_state.view_state['zoomed'] = False
+                    st.session_state.view_state['focused_region'] = None
+                else:
+                    # Zoom to region
+                    st.session_state.view_state['zoomed'] = True
+                    st.session_state.view_state['focused_region'] = region_id
+                st.experimental_rerun()
+                break
+
 @st.cache_data(ttl=300)  # Cache for 5 minutes
 def get_buildings_data():
     """Get all buildings data from the API."""
@@ -30,6 +68,11 @@ def create_campus_map():
         # Add regions as filled shapes if they exist
         if regions:
             for region_id, region in regions.items():
+                # Skip regions that aren't focused when zoomed
+                if (st.session_state.view_state['zoomed'] and 
+                    st.session_state.view_state['focused_region'] != region_id):
+                    continue
+                    
                 center = region["center"]
                 color = region["color"]
                 
@@ -52,7 +95,12 @@ def create_campus_map():
         # Add buildings as scatter points
         if buildings["metadata"]:
             for meta in buildings["metadata"]:
-                coords = meta["coordinates"]
+                # Skip buildings not in focused region when zoomed
+                if (st.session_state.view_state['zoomed'] and 
+                    meta.get('region_id') != st.session_state.view_state['focused_region']):
+                    continue
+                    
+                coords = json.loads(meta["coordinates"])
                 region_id = meta.get("region_id", "")
                 region_color = regions.get(region_id, {}).get("color", "#888888") if region_id else "#888888"
                 
@@ -84,6 +132,16 @@ def create_campus_map():
                     hoverinfo="text"
                 ))
         
+        # Set axis ranges based on view state
+        if st.session_state.view_state['zoomed'] and st.session_state.view_state['focused_region']:
+            region = regions[st.session_state.view_state['focused_region']]
+            bounds = calculate_region_bounds(region['center'])
+            xrange = bounds['x']
+            yrange = bounds['y']
+        else:
+            xrange = st.session_state.view_state['original_ranges']['x']
+            yrange = st.session_state.view_state['original_ranges']['y']
+        
         # Update layout
         fig.update_layout(
             title="Virtual Campus Map",
@@ -93,17 +151,18 @@ def create_campus_map():
             width=1000,
             height=800,
             xaxis=dict(
-                range=[-1.2, 1.2],
+                range=xrange,
                 showgrid=False,
                 zeroline=False,
                 showticklabels=False
             ),
             yaxis=dict(
-                range=[-1.2, 1.2],
+                range=yrange,
                 showgrid=False,
                 zeroline=False,
                 showticklabels=False
-            )
+            ),
+            dragmode='pan'  # Enable panning
         )
         
         return fig
@@ -142,15 +201,23 @@ def main():
         # Main map
         fig = create_campus_map()
         if fig:
-            st.plotly_chart(fig, use_container_width=True)
+            # Add click event handling
+            st.plotly_chart(fig, use_container_width=True, key='campus_map')
+            handle_click_event()
         
-        # Update button
+        # Update button and view controls
         col1, col2 = st.columns([1, 4])
         with col1:
             if st.button("Force Region Update"):
                 with st.spinner("Updating regions..."):
                     api_client.update_regions()
                     st.success("Regions updated!")
+                    st.rerun()
+            
+            if st.session_state.view_state['zoomed']:
+                if st.button("Reset View"):
+                    st.session_state.view_state['zoomed'] = False
+                    st.session_state.view_state['focused_region'] = None
                     st.rerun()
                     
     except Exception as e:
