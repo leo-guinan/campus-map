@@ -21,22 +21,31 @@ def generate_2d_coordinates(embeddings: List[Any]) -> List[List[float]]:
             logger.warning("Embeddings is empty")
             return []
             
-        # Convert embeddings to numpy array
+        # Convert embeddings to numpy array and ensure it's 2D
         embeddings_array = np.array(embeddings)
-        
         if embeddings_array.size == 0:
             logger.warning("Embeddings array is empty after conversion")
             return []
         
-        # Handle different shapes of embeddings
+        # Reshape based on input shape
         if len(embeddings_array.shape) == 1:
             embeddings_array = embeddings_array.reshape(1, -1)
         elif len(embeddings_array.shape) == 3:
             embeddings_array = embeddings_array.reshape(embeddings_array.shape[0], -1)
         
+        # Ensure we have valid data for PCA
+        if embeddings_array.shape[0] < 1 or embeddings_array.shape[1] < 1:
+            logger.warning(f"Invalid embeddings shape: {embeddings_array.shape}")
+            return []
+            
         # Perform PCA
-        pca = PCA(n_components=2)
+        n_components = min(2, embeddings_array.shape[1])
+        pca = PCA(n_components=n_components)
         coordinates_2d = pca.fit_transform(embeddings_array)
+        
+        # If we only got 1 component, add a zero column
+        if n_components == 1:
+            coordinates_2d = np.column_stack([coordinates_2d, np.zeros(len(coordinates_2d))])
         
         return coordinates_2d.tolist()
     except Exception as e:
@@ -62,31 +71,29 @@ def update_metadata_with_coordinates(buildings_data: Dict) -> Dict:
             logger.warning("Empty ids list in buildings data")
             return {"ids": [], "metadata": []}
         
-        if "embeddings" not in buildings_data:
+        if "embeddings" not in buildings_data or buildings_data["embeddings"] is None:
             logger.warning("No embeddings found in buildings data")
-            return {
-                "ids": buildings_data["ids"],
-                "metadata": buildings_data.get("metadatas", [])
-            }
-        
-        if "metadatas" not in buildings_data:
-            logger.warning("No metadatas found in buildings data")
-            return {
-                "ids": buildings_data["ids"],
-                "metadata": []
-            }
-        
-        # Generate 2D coordinates
-        coordinates = generate_2d_coordinates(buildings_data["embeddings"])
+            # Generate random coordinates if no embeddings
+            coordinates = [[np.random.uniform(-1, 1), np.random.uniform(-1, 1)] 
+                         for _ in range(len(buildings_data["ids"]))]
+        else:
+            coordinates = generate_2d_coordinates(buildings_data["embeddings"])
+            if not coordinates:
+                # Fallback to random coordinates
+                coordinates = [[np.random.uniform(-1, 1), np.random.uniform(-1, 1)] 
+                             for _ in range(len(buildings_data["ids"]))]
         
         # Update metadata with coordinates
-        for i, coords in enumerate(coordinates):
-            if i < len(buildings_data["metadatas"]):
-                buildings_data["metadatas"][i]["coordinates"] = json.dumps(coords)
+        result_metadata = []
+        for i, meta in enumerate(buildings_data.get("metadatas", [])):
+            if i < len(coordinates):
+                meta_copy = meta.copy() if meta else {}
+                meta_copy["coordinates"] = json.dumps(coordinates[i])
+                result_metadata.append(meta_copy)
         
         return {
             "ids": buildings_data["ids"],
-            "metadata": buildings_data["metadatas"]
+            "metadata": result_metadata
         }
     except Exception as e:
         logger.error(f"Error updating metadata with coordinates: {str(e)}")
