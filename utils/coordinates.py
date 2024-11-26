@@ -46,11 +46,28 @@ def generate_2d_coordinates(embeddings: List[Any]) -> List[List[float]]:
         # If we only got 1 component, add a zero column
         if n_components == 1:
             coordinates_2d = np.column_stack([coordinates_2d, np.zeros(len(coordinates_2d))])
+            
+        # Normalize coordinates to [-1, 1] range
+        if len(coordinates_2d) > 0:
+            coordinates_2d = coordinates_2d / np.abs(coordinates_2d).max()
         
         return coordinates_2d.tolist()
     except Exception as e:
         logger.error(f"Error generating coordinates: {str(e)}")
         return []
+
+def generate_random_coordinates(n: int, radius: float = 0.3) -> List[List[float]]:
+    """Generate random coordinates within a circle of given radius."""
+    coordinates = []
+    for _ in range(n):
+        # Generate random angle and radius
+        theta = np.random.uniform(0, 2 * np.pi)
+        r = np.random.uniform(0, radius)
+        # Convert to cartesian coordinates
+        x = r * np.cos(theta)
+        y = r * np.sin(theta)
+        coordinates.append([x, y])
+    return coordinates
 
 def update_metadata_with_coordinates(buildings_data: Dict) -> Dict:
     """Update building metadata with 2D coordinates."""
@@ -73,15 +90,13 @@ def update_metadata_with_coordinates(buildings_data: Dict) -> Dict:
         
         if "embeddings" not in buildings_data or buildings_data["embeddings"] is None:
             logger.warning("No embeddings found in buildings data")
-            # Generate random coordinates if no embeddings
-            coordinates = [[np.random.uniform(-1, 1), np.random.uniform(-1, 1)] 
-                         for _ in range(len(buildings_data["ids"]))]
+            # Generate random coordinates in a circle
+            coordinates = generate_random_coordinates(len(buildings_data["ids"]))
         else:
             coordinates = generate_2d_coordinates(buildings_data["embeddings"])
             if not coordinates:
-                # Fallback to random coordinates
-                coordinates = [[np.random.uniform(-1, 1), np.random.uniform(-1, 1)] 
-                             for _ in range(len(buildings_data["ids"]))]
+                # Fallback to random coordinates in a circle
+                coordinates = generate_random_coordinates(len(buildings_data["ids"]))
         
         # Update metadata with coordinates
         result_metadata = []
