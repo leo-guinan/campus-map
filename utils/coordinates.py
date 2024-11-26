@@ -29,35 +29,46 @@ def generate_2d_coordinates(embeddings: List[Any]) -> List[List[float]]:
         
         # Reshape based on input shape
         if len(embeddings_array.shape) == 1:
-            embeddings_array = embeddings_array.reshape(1, -1)
+            embeddings_array = embeddings_array.reshape(-1, 1)
         elif len(embeddings_array.shape) == 3:
             embeddings_array = embeddings_array.reshape(embeddings_array.shape[0], -1)
         
         # Ensure we have valid data for PCA
-        if embeddings_array.shape[0] < 1 or embeddings_array.shape[1] < 1:
+        if embeddings_array.shape[0] < 1:
             logger.warning(f"Invalid embeddings shape: {embeddings_array.shape}")
             return []
+            
+        # If we have only one feature, generate the second dimension
+        if embeddings_array.shape[1] == 1:
+            logger.info("Single feature detected, generating second dimension")
+            second_dim = np.random.normal(size=(embeddings_array.shape[0], 1))
+            embeddings_array = np.hstack([embeddings_array, second_dim])
             
         # Perform PCA
         n_components = min(2, embeddings_array.shape[1])
         pca = PCA(n_components=n_components)
         coordinates_2d = pca.fit_transform(embeddings_array)
         
-        # If we only got 1 component, add a zero column
-        if n_components == 1:
-            coordinates_2d = np.column_stack([coordinates_2d, np.zeros(len(coordinates_2d))])
+        # If we only got 1 component, add a random second component
+        if coordinates_2d.shape[1] == 1:
+            second_component = np.random.normal(size=(coordinates_2d.shape[0], 1))
+            coordinates_2d = np.hstack([coordinates_2d, second_component])
             
         # Normalize coordinates to [-1, 1] range
         if len(coordinates_2d) > 0:
-            coordinates_2d = coordinates_2d / np.abs(coordinates_2d).max()
+            coordinates_2d = coordinates_2d / (np.abs(coordinates_2d).max() + 1e-10)
         
         return coordinates_2d.tolist()
     except Exception as e:
         logger.error(f"Error generating coordinates: {str(e)}")
-        return []
+        # Fallback to random coordinates
+        return generate_random_coordinates(len(embeddings))
 
 def generate_random_coordinates(n: int, radius: float = 0.3) -> List[List[float]]:
     """Generate random coordinates within a circle of given radius."""
+    if n <= 0:
+        return []
+        
     coordinates = []
     for _ in range(n):
         # Generate random angle and radius
