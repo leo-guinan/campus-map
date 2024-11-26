@@ -307,13 +307,16 @@ class ClusterManager:
                     region.buildings.append(building_id)
                     region.total_donations += meta.get("donation_amount", 0)
                     
+                    # Round coordinates to reduce string length
+                    rounded_coords = [round(x, 4) for x in coords]
+                    
                     # Update building metadata with region and coordinates
                     self.dp.buildings.update(
                         ids=[building_id],
                         metadatas=[{
                             **meta, 
                             "region_id": region_id,
-                            "coordinates": json.dumps(coords)
+                            "coordinates": json.dumps(rounded_coords)
                         }]
                     )
                     logger.info(f"Assigned building {building_id} to region {region_id}")

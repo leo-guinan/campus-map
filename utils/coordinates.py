@@ -54,9 +54,10 @@ def generate_2d_coordinates(embeddings: List[Any]) -> List[List[float]]:
             second_component = np.random.normal(size=(coordinates_2d.shape[0], 1))
             coordinates_2d = np.hstack([coordinates_2d, second_component])
             
-        # Normalize coordinates to [-1, 1] range
+        # Normalize coordinates to [-1, 1] range and round
         if len(coordinates_2d) > 0:
             coordinates_2d = coordinates_2d / (np.abs(coordinates_2d).max() + 1e-10)
+            coordinates_2d = np.round(coordinates_2d, 4)  # Round to 4 decimal places
         
         return coordinates_2d.tolist()
     except Exception as e:
@@ -74,9 +75,9 @@ def generate_random_coordinates(n: int, radius: float = 0.3) -> List[List[float]
         # Generate random angle and radius
         theta = np.random.uniform(0, 2 * np.pi)
         r = np.random.uniform(0, radius)
-        # Convert to cartesian coordinates
-        x = r * np.cos(theta)
-        y = r * np.sin(theta)
+        # Convert to cartesian coordinates and round
+        x = round(r * np.cos(theta), 4)
+        y = round(r * np.sin(theta), 4)
         coordinates.append([x, y])
     return coordinates
 
