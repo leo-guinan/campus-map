@@ -227,7 +227,7 @@ class ClusterManager:
             colors.append(hex_color)
         return colors
 
-    async def update_clusters(self):
+    async def update_clusters(self, db: Session):
         """Update region assignments for all buildings."""
         try:
             # Get all buildings
@@ -238,97 +238,101 @@ class ClusterManager:
             
             logger.info(f"Processing {len(buildings['ids'])} buildings for clustering")
             
-            # Generate coordinates
-            coordinates = generate_2d_coordinates(buildings.get("embeddings", []))
+            # Get hardcoded regions
+            hardcoded_regions = db.query(Region).filter_by(is_hardcoded=True).all()
+            hardcoded_region_dict = {r.id: r for r in hardcoded_regions}
+            
+            # Get buildings not in hardcoded regions for dynamic clustering
+            building_ids = buildings["ids"]
+            building_details = db.query(BuildingDetails).filter(
+                BuildingDetails.building_id.in_(building_ids)
+            ).all()
+            
+            # Create dict of building_id to regions
+            building_regions = {b.building_id: b.regions for b in building_details}
+            
+            # Filter buildings for dynamic clustering
+            dynamic_building_indices = []
+            for i, building_id in enumerate(building_ids):
+                regions = building_regions.get(building_id, [])
+                if not any(r.is_hardcoded for r in regions):
+                    dynamic_building_indices.append(i)
+            
+            if not dynamic_building_indices:
+                logger.info("No buildings for dynamic clustering")
+                return
+            
+            # Generate coordinates for dynamic clustering
+            coordinates = generate_2d_coordinates(buildings["embeddings"])
             if not coordinates:
                 logger.warning("No coordinates generated for clustering")
-                # Fallback to random coordinates
-                coordinates = generate_random_coordinates(len(buildings["ids"]))
-                logger.info("Using random coordinates as fallback")
-            
-            # Convert to numpy array for clustering
-            coordinates_array = np.array(coordinates)
-            if coordinates_array.size == 0:
-                logger.warning("Empty coordinates array for clustering")
                 return
             
-            # Determine number of clusters based on number of buildings
-            n_clusters = min(self.max_clusters, len(coordinates_array))
+            # Filter coordinates for dynamic clustering
+            dynamic_coordinates = np.array([coordinates[i] for i in dynamic_building_indices])
+            
+            # Determine number of clusters
+            n_clusters = min(self.max_clusters - len(hardcoded_regions), len(dynamic_coordinates))
             if n_clusters < 1:
-                logger.warning("Not enough buildings for clustering")
+                logger.warning("Not enough space for dynamic clusters")
                 return
             
-            logger.info(f"Creating {n_clusters} clusters")
+            logger.info(f"Creating {n_clusters} dynamic clusters")
             
             # Perform clustering
             kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-            cluster_labels = kmeans.fit_predict(coordinates_array)
+            cluster_labels = kmeans.fit_predict(dynamic_coordinates)
             
-            # Generate colors for regions
+            # Generate colors for dynamic regions
             colors = self.generate_colors(n_clusters)
             
-            # Create regions
-            self.regions = {}
+            # Create dynamic regions in database
+            dynamic_regions = []
             for i in range(n_clusters):
-                self.regions[str(i)] = Region(
+                region = Region(
+                    id=f"dynamic_{i}_{int(datetime.now().timestamp())}",
                     name=self.region_names[i],
                     color=colors[i],
-                    center=kmeans.cluster_centers_[i].tolist()
+                    center=kmeans.cluster_centers_[i].tolist(),
+                    is_hardcoded=False
                 )
+                db.add(region)
+                dynamic_regions.append(region)
             
-            # Reset region totals
-            for region in self.regions.values():
-                region.buildings = []
-                region.total_donations = 0.0
+            # Assign buildings to dynamic regions
+            for idx, label in enumerate(cluster_labels):
+                building_idx = dynamic_building_indices[idx]
+                building_id = building_ids[building_idx]
+                
+                # Get building from database
+                building = db.query(BuildingDetails).filter_by(building_id=building_id).first()
+                if building:
+                    # Remove from old dynamic regions
+                    building.regions = [r for r in building.regions if r.is_hardcoded]
+                    # Add to new dynamic region
+                    building.regions.append(dynamic_regions[label])
             
-            # Verify all required data is present and of same length
-            if not (len(buildings["ids"]) == len(buildings["metadatas"]) == 
-                    len(cluster_labels) == len(coordinates)):
-                logger.error("Mismatched data lengths for clustering")
-                logger.error(f"ids: {len(buildings['ids'])}, meta: {len(buildings['metadatas'])}, "
-                            f"labels: {len(cluster_labels)}, coords: {len(coordinates)}")
-                return
-            
-            # Assign buildings to regions and update metadata
-            for building_id, meta, label, coords in zip(
-                buildings["ids"],
-                buildings["metadatas"],
-                cluster_labels,
-                coordinates,
-                strict=True
-            ):
-                try:
-                    region_id = str(label)
-                    if region_id not in self.regions:
-                        logger.error(f"Invalid region_id {region_id}")
-                        continue
-                    
-                    region = self.regions[region_id]
-                    region.buildings.append(building_id)
-                    region.total_donations += meta.get("donation_amount", 0)
-                    
-                    # Round coordinates to reduce string length
-                    rounded_coords = [round(x, 4) for x in coords]
-                    
-                    # Update building metadata with region and coordinates
-                    self.dp.buildings.update(
-                        ids=[building_id],
-                        metadatas=[{
-                            **meta, 
-                            "region_id": region_id,
-                            "coordinates": json.dumps(rounded_coords)
-                        }]
-                    )
-                    logger.info(f"Assigned building {building_id} to region {region_id}")
-                except Exception as e:
-                    logger.error(f"Error updating building {building_id}: {str(e)}")
-                    continue
-            
+            db.commit()
             logger.info("Clustering update complete")
+            
+            # Update self.regions with all regions
+            all_regions = db.query(Region).all()
+            self.regions = {
+                r.id: Region(
+                    name=r.name,
+                    color=r.color,
+                    center=r.center,
+                    buildings=[b.building_id for b in r.buildings],
+                    total_donations=sum(b.donation_amount for b in r.buildings)
+                )
+                for r in all_regions
+            }
+            
             return self.get_region_data()
             
         except Exception as e:
             logger.error(f"Error in update_clusters: {str(e)}")
+            db.rollback()
             return None
     
     def get_region_data(self) -> Dict:
